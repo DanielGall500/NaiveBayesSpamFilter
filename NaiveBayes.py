@@ -46,7 +46,6 @@ del emails[0] #TODO
 
 def prob_of_classes(labels):
 	probs = {}
-
 	classes = set(labels)
 
 	for c in classes:
@@ -58,9 +57,62 @@ def prob_of_classes(labels):
 
 	return probs
 
+def train(frequency_table, prob_of_classes):
+
+	
+	frequencies = frequency_table.iloc[:, 1:]
+	labels = frequency_table.iloc[:, 0].values
+
+	vocab = list(frequencies.columns.values)
+
+	spam, nonspam = pd.DataFrame([]), pd.DataFrame([])
+
+	for idx, row in frequencies.iterrows():
+		if labels[idx] == '0':
+			spam = spam.append(row)
+		else:
+			nonspam = nonspam.append(row)
+
+	spam_output = {}
+
+	spam_word_count = sum([word for word in spam.sum()])
+	nonspam_word_count = sum([word for word in nonspam.sum()])
+
+	alpha = 1
+
+	for word in vocab:
+		word_occurences_spam = spam[word].sum()
+		word_occurences_nonspam = nonspam[word].sum()
+
+		print 'WORD OCC', word_occurences_spam
+		print 'Spam word count', spam_word_count
+		print 'len vocab', len(vocab)
+
+		bayesian_prob_spam = (word_occurences_spam + alpha) / (spam_word_count + len(vocab))
+
+		print bayesian_prob_spam
+
+		print ' '
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 freq_tbl = create_frequency_table(emails, labels)
 
 class_probs = prob_of_classes(labels)
+
+train(freq_tbl, class_probs)
 
 
 
