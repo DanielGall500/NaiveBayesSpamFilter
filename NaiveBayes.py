@@ -6,7 +6,7 @@ email_path = "/Users/dannyg/Desktop/Projects/NaiveBayesProject/NaiveBayesSpamFil
 
 email_files = [x for x in os.listdir(email_path)]
 
-filter_chars = [',', '?', '!', '  ', '   ', '    ']
+to_filter = [',', '?', '!', '  ', '   ', '    ']
 
 def parse_files(email_files, email_path):
 
@@ -15,9 +15,9 @@ def parse_files(email_files, email_path):
 
 	for e in email_files:
 		with open(email_path + e, 'r') as email:
-			text = [x for x in email.read().replace('\n', ' ')]
+			text = [x for x in email.read().lower().replace('\n', ' ')]
 
-			for ch in filter_chars:
+			for ch in to_filter:
 				text = [x.replace(ch, ' ') for x in text]
 
 			text = ''.join(text).split()
@@ -29,105 +29,98 @@ def parse_files(email_files, email_path):
 			emails.append(text) 
 	return emails, labels
 
-def parse_text(text):
 
-	text = [x for x in text.replace('\n', ' ')]
+class SpamFilter(object):
 
-	for ch in filter_chars:
-		text = [x.replace(ch, ' ') for x in text]
+	def __init__(self, emails, to_filter=None):
+		self.emails = emails
+		self.to_filter = to_filter
 
-	text = ''.join(text).split()
+	def create_frequency_table(self, texts=None, labels=None):
+		freq_tbl = pd.DataFrame([])
 
-	return [text]
+		if not texts:
+			texts = self.emails
+			print 'not texts'
 
+		for idx, t in enumerate(self.emails):
+			vocab = set(t)
 
+			d = pd.Series({ v : t.count(v) for v in vocab})
 
-def create_frequency_table(texts, labels=None, parse=False):
-	freq_tbl = pd.DataFrame([])
+			if labels != None:
+				d['*class*'] = labels[idx]
 
-	for idx, t in enumerate(texts):
-		vocab = set(t)
+			freq_tbl = freq_tbl.append(d, ignore_index=True)
 
-		d = pd.Series({ v : t.count(v) for v in vocab})
+		return freq_tbl.fillna(0)
 
-		if labels != None:
-			d['*class*'] = labels[idx]
+	def train(self, frequency_table):
+		
+		frequencies = frequency_table.iloc[:, 1:]
+		labels = frequency_table.iloc[:, 0].values
 
-		freq_tbl = freq_tbl.append(d, ignore_index=True)
+		print frequencies
 
-	freq_tbl = freq_tbl.fillna(0)
+		vocab = list(frequencies.columns.values)[0]
 
-	return freq_tbl
+		spam, nonspam = pd.DataFrame([]), pd.DataFrame([])
 
-def prob_of_classes(labels):
-	probs = {}
-	classes = set(labels)
+		for idx, row in frequencies.iterrows():
+			print labels[idx]
+			if labels[idx] == '1':
+				spam = spam.append(row)
+			else:
+				nonspam = nonspam.append(row)
 
-	for c in classes:
-		all_c = [x for x in labels if x == c]
+		nonspam_probs, spam_probs = {}, {}
 
-		prob_class = float(len(all_c)) / float(len(labels))
+		spam_word_count = sum([word for word in spam.sum()])
+		nonspam_word_count = sum([word for word in nonspam.sum()])
 
-		probs[c] = prob_class
+		alpha = 1
 
-	return probs
+		for word in vocab:
+			print 'w: ', word
+			print 'sp: ', spam
+			word_occurences_spam = spam[word].sum()
+			word_occurences_nonspam = nonspam[word].sum()
 
-def train(frequency_table):
+			bayesian_prob_spam = (word_occurences_spam + alpha) / (spam_word_count + len(vocab))
+			bayesian_prob_nonspam = (word_occurences_nonspam + alpha) / (spam_word_count + len(vocab))
 
-	
-	frequencies = frequency_table.iloc[:, 1:]
-	labels = frequency_table.iloc[:, 0].values
+			nonspam_probs[word], spam_probs[word] = bayesian_prob_nonspam, bayesian_prob_spam
 
-	vocab = list(frequencies.columns.values)
+		self.nonspam_pr = nonspam_probs
+		self.spam_pr = spam_probs
 
-	spam, nonspam = pd.DataFrame([]), pd.DataFrame([])
+	def predict(self, text):
 
-	for idx, row in frequencies.iterrows():
-		if labels[idx] == '1':
-			spam = spam.append(row)
-		else:
-			nonspam = nonspam.append(row)
+		text = [x for x in text.replace('\n', ' ')]
 
-	nonspam_probs, spam_probs = {}, {}
+		for ch in self.to_filter:
+			text = [x.replace(ch, ' ') for x in text]
 
-	spam_word_count = sum([word for word in spam.sum()])
-	nonspam_word_count = sum([word for word in nonspam.sum()])
+		prsd_text = [''.join(text).split()]
 
-	alpha = 1
+		txt_table = self.create_frequency_table(texts=prsd_text)
+		vocab = txt_table.columns.values
 
-	for word in vocab:
-		word_occurences_spam = spam[word].sum()
-		word_occurences_nonspam = nonspam[word].sum()
+		spam_likelihood = 0
+		nonspam_likelihood = 0
 
-		bayesian_prob_spam = (word_occurences_spam + alpha) / (spam_word_count + len(vocab))
-		bayesian_prob_nonspam = (word_occurences_nonspam + alpha) / (spam_word_count + len(vocab))
+		for wrd in vocab:
 
-		nonspam_probs[word], spam_probs[word] = bayesian_prob_nonspam, bayesian_prob_spam
+			if wrd in self.spam_pr:
+				spam_likelihood += self.spam_pr[wrd]
 
-	return nonspam_probs, spam_probs
+			if wrd in self.nonspam_pr:
+				nonspam_likelihood += self.spam_pr[wrd]
 
-def predict(text, nb_nonspam, nb_spam):
-	prsd_text = parse_text(text)
+		print 'Spam Likelihood: ', spam_likelihood
+		print 'NonSpam Likelihood: ', nonspam_likelihood
 
-	txt_table = create_frequency_table(prsd_text)
-	vocab = txt_table.columns.values
-
-	spam_likelihood = 0
-	nonspam_likelihood = 0
-
-	for wrd in vocab:
-		print wrd
-		if wrd in nb_spam:
-			print 'Spam: ', nb_spam[wrd]
-			spam_likelihood += nb_spam[wrd]
-		if wrd in nb_nonspam:
-			print 'NonSpam: ', nb_nonspam[wrd]
-			nonspam_likelihood += nb_nonspam[wrd]
-
-	print 'Spam Likelihood: ', spam_likelihood
-	print 'NonSpam Likelihood: ', nonspam_likelihood
-
-	return int(spam_likelihood > nonspam_likelihood)
+		return int((spam_likelihood / nonspam_likelihood) >= 1) #Bayesian classifier
 
 
 emails, labels = parse_files(email_files, email_path)
@@ -135,19 +128,20 @@ emails, labels = parse_files(email_files, email_path)
 del labels[0]
 del emails[0] #TODO
 
-freq_tbl = create_frequency_table(emails, labels)
+print emails
 
-class_probs = prob_of_classes(labels)
+nb_spamfilter = SpamFilter(emails=emails, to_filter=to_filter)
 
-nb_nonspam, nb_spam = train(freq_tbl)
+email_tbl = nb_spamfilter.create_frequency_table(labels=labels)
 
-print nb_nonspam 
-print nb_spam
+nb_spamfilter.train(frequency_table=email_tbl)
 
-eml_test = 'dear paddy'
+eml_test = 'Hi Daniel johanne work for you regards'
+pred = nb_spamfilter.predict(eml_test)
 
-print predict(eml_test, nb_nonspam, nb_spam)
+print pred
 
+"""
 import matplotlib.pyplot as plt
 
 def jitter(array, scale=0.1):
@@ -166,7 +160,7 @@ for i, text in enumerate(n):
 	plt.annotate(text, (x[i], y[i]))
 
 plt.show()
-
+"""
 
 
 
